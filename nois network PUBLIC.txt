@@ -1,0 +1,123 @@
+
+1. First of all we download and install all upgrades for server.
+
+sudo apt update && sudo apt upgrade -y
+
+2. The snstallation of utilities
+
+apt install curl build-essential git wget jq make gcc tmux htop nvme-cli pkg-config libssl-dev libleveldb-dev tar clang bsdmainutils ncdu unzip libleveldb-dev -y
+
+3. The installation of version GO
+ 
+ver="1.19" && \
+wget "https://golang.org/dl/go$ver.linux-amd64.tar.gz" && \
+sudo rm -rf /usr/local/go && \
+sudo tar -C /usr/local -xzf "go$ver.linux-amd64.tar.gz" && \
+rm "go$ver.linux-amd64.tar.gz" && \
+echo "export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin" >> $HOME/.bash_profile && \
+source $HOME/.bash_profile && \
+go version
+
+4. The snstallation of binary files
+
+git clone https://github.com/noislabs/full-node && cd full-node/full-node/
+git checkout nois-testnet-003
+./build.sh
+mv out/noisd /usr/local/bin
+
+
+--- check version
+noisd version --long | head
+
+5. Let's give a name to our node
+
+noisd init NAME --chain-id nois-testnet-003
+
+6. Then we download genesis version
+
+wget -O $HOME/.noisd/config/genesis.json "https://raw.githubusercontent.com/noislabs/testnets/main/nois-testnet-003/genesis.json"
+
+7. Reset validator
+
+cd && cat .noisd/data/priv_validator_state.json
+
+8. Set up settings of the node configuration
+
+export DENOM=unois
+export CONFIG_DIR=$HOME/.noisd/config
+sed -i 's/minimum-gas-prices = ""/minimum-gas-prices = "0.05'"${DENOM}"'"/' $CONFIG_DIR/app.toml \
+  && sed -i 's/^timeout_propose =.*$/timeout_propose = "1s"/' $CONFIG_DIR/config.toml \
+  && sed -i 's/^timeout_propose_delta =.*$/timeout_propose_delta = "200ms"/' $CONFIG_DIR/config.toml \
+  && sed -i 's/^timeout_prevote =.*$/timeout_prevote = "500ms"/' $CONFIG_DIR/config.toml \
+  && sed -i 's/^timeout_prevote_delta =.*$/timeout_prevote_delta = "200ms"/' $CONFIG_DIR/config.toml \
+  && sed -i 's/^timeout_precommit =.*$/timeout_precommit = "1s"/' $CONFIG_DIR/config.toml \
+  && sed -i 's/^timeout_precommit_delta =.*$/timeout_precommit_delta = "200ms"/' $CONFIG_DIR/config.toml \
+  && sed -i 's/^timeout_commit =.*$/timeout_commit = "3s"/' $CONFIG_DIR/config.toml
+  
+  -- Change configuration
+noisd config chain-id nois-testnet-003
+
+-- add some seeds/bpeers/peers to config.toml
+external_address=$(wget -qO- eth0.me)
+sed -i.bak -e "s/^external_address *=.*/external_address = \"$external_address:26656\"/" $HOME/.noisd/config/config.toml
+
+peers="2bf8002d0f65c3d86fca31ea0f043d912682c3e0@65.109.70.23:17356"
+sed -i.bak -e "s/^persistent_peers *=.*/persistent_peers = \"$peers\"/" $HOME/.noisd/config/config.toml
+
+seeds=""
+sed -i.bak -e "s/^seeds =.*/seeds = \"$seeds\"/" $HOME/.noisd/config/config.toml
+
+-- Increase the number of incoming and outcoming peers for connection
+sed -i 's/max_num_inbound_peers =.*/max_num_inbound_peers = 50/g' $HOME/.noisd/config/config.toml
+sed -i 's/max_num_outbound_peers =.*/max_num_outbound_peers = 50/g' $HOME/.noisd/config/config.toml
+
+-- Set up filtration of peers
+sed -i -e "s/^filter_peers *=.*/filter_peers = \"true\"/" $HOME/.noisd/config/config.toml
+
+9. Set up pruning 
+
+pruning="custom" && \
+pruning_keep_recent="100" && \
+pruning_keep_every="0" && \
+pruning_interval="50" && \
+sed -i -e "s/^pruning *=.*/pruning = \"$pruning\"/" $HOME/.noisd/config/app.toml && \
+sed -i -e "s/^pruning-keep-recent *=.*/pruning-keep-recent = \"$pruning_keep_recent\"/" $HOME/.noisd/config/app.toml && \
+sed -i -e "s/^pruning-keep-every *=.*/pruning-keep-every = \"$pruning_keep_every\"/" $HOME/.noisd/config/app.toml && \
+sed -i -e "s/^pruning-interval *=.*/pruning-interval = \"$pruning_interval\"/" $HOME/.noisd/config/app.toml
+
+10. Create a service file
+
+sudo tee /etc/systemd/system/noisd.service > /dev/null <<EOF
+[Unit]
+Description=noisd
+After=network-online.target
+
+[Service]
+User=$USER
+ExecStart=$(which noisd) start
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+11. Launching a node
+
+systemctl daemon-reload && \
+systemctl enable noisd && \
+systemctl restart noisd && journalctl -u noisd -f -o cat
+
+12. Check up the synchronization 
+
+noisd status 2>&1 | jq .SyncInfo
+
+
+13. Create the wallet
+
+-- восстановить кошелек
+noisd keys add NAME_WALLET --keyring-backend os
+
+
+Finish. Our node is running
