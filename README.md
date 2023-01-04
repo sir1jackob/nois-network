@@ -1,3 +1,3 @@
-# nois-network
-how to run a node of nois network
-The next file is a guid for installation node of nois network
+# Hi there, my name is Aleks
+
+The next file is a guide for installation node of nois network
